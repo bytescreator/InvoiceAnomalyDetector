@@ -37,7 +37,6 @@ class XLSXData:
         self.month = int(naming[1])-1
         self.tariff = naming[2]
 
-@lru_cache
 def get_mapping():
     map = []
 
