@@ -27,6 +27,9 @@ class XLSXData:
 
         self.header = self.rows[0]
         self.rows = self.rows[1:] # Throw away headers
+        self.byCounterNum = {}
+        for row in self.rows:
+            self.byCounterNum.update({row[3]: row})
 
         naming = os.path.basename(os.path.splitext(self.xlsFile)[0]).split('-')
 
@@ -34,6 +37,7 @@ class XLSXData:
         self.month = int(naming[1])-1
         self.tariff = naming[2]
 
+@lru_cache
 def get_mapping():
     map = []
 
@@ -52,30 +56,32 @@ def get_mapping():
 
     return map
 
-@lru_cache(500)
+__map = get_mapping()
+
+@lru_cache(1000)
 def get_ind_id(sub):
-    all_scores = []
-    _map = get_mapping()
-    for saved_sub in _map:
+    _max = (0, 0)
+    _last_max_index = None
+
+    for saved_sub in __map:
         if saved_sub[1] == '':
             saved_sub[1] = "00.00.00.00.00"
         if saved_sub[1].count(".") != 4:
             saved_sub[1] = "00.00.00.00.00"
 
-        all_scores.append(get_match_score(sub[0], saved_sub[0], sub[1], saved_sub[1]))
+        score = get_match_score(sub[0], saved_sub[0], sub[1], saved_sub[1])
+        if score == (20, 5):
+            return saved_sub[2]
 
-    _max = (0, 0)
-    _last_max_index = None
-
-    for index, score in enumerate(all_scores):
         _avg_score = (score[0]*3+score[1])/4
 
         if (score[0] > _max[0] and score[1] > _max[1]) or (_avg_score > (_max[0]*3+_max[1])/4):
             _max = score
-            _last_max_index = index
+            _last_best = saved_sub[2]
 
-    return _map[_last_max_index][2]
+    return _last_best
 
+@lru_cache(500)
 def get_match_score(abn1, abn2, ist1, ist2):
     first_op_num = [int(i) for i in ist1.split(".")]
     second_op_num = [int(i) for i in ist2.split(".")]
@@ -125,17 +131,18 @@ def match(datas: list) -> dict:
             if rows == None:
                 continue
 
-            for row in rows.rows:
-                if sub[2] == row[3]:
-                    Id = get_ind_id(sub[:-1])
-                    if not (Id in output.keys()):
-                        output.update({Id: {"indexes": [index], "row_datas": [row[1:]]}})
-                    elif not (index in output[Id]["indexes"]):
-                        output[Id]["indexes"].append(index)
-                        output[Id]["row_datas"].append(row[1:])
+            try:
+                row_data = rows.byCounterNum[sub[2]]
+            except KeyError:
+                continue
 
-                    print(f"get_ind_id({sub[:-1]}) -> {Id}")
-    
+            Id = get_ind_id(sub[:-1])
+            if not (Id in output.keys()):
+                output.update({Id: {"indexes": [index], "row_datas": [row_data]}})
+            elif not (index in output[Id]["indexes"]):
+                output[Id]["indexes"].append(index)
+                output[Id]["row_datas"].append(row_data)
+
     return output
 
 def load_xlses() -> dict:
