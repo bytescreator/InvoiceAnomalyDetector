@@ -5,7 +5,6 @@ import json
 import xlrd
 import numpy as np
 import matplotlib.pyplot as plt
-from statsmodels.tsa.seasonal import STL
 
 INPUT_SHEETS_FOLDER="./xlses"
 REPORT_OUTPUT_FOLDER="./output"
@@ -165,11 +164,6 @@ def load_xlses() -> dict:
 
     return output
 
-def test_stl(data, period=12):
-    res = STL(data, period=period).fit()
-    res.plot()
-    plt.show()
-
 file_structure = load_xlses()
 
 o = {}
@@ -191,8 +185,31 @@ for id in o:
 
     for year in o[id].keys():
         for month in o[id][year].keys():
-            dataset.append(o[id][year][month][13])
+            print(id, year, month)
+
+            dataset.append(((year-2019)*12+month, o[id][year][month][11])) #ort tuketime göre enflasyondan dolayı fiyat patlayabilir.
 
     print(id, dataset)
-    if len(dataset) == 12:
-        test_stl(np.asarray(dataset))
+    _show=False
+    x=np.asarray(dataset)
+    ll = x.mean() - x.std()*2
+    ul = x.mean() + x.std()*2
+
+    plt.axhline(y=ll, color='r', linestyle='--', label='2. std')
+    plt.axhline(y=ul, color='y', linestyle='--', label='2. std')
+    plt.axhline(y=x.mean() + x.std()*3, color='g', linestyle='--', label='3. std')
+
+    plt.scatter([a[0] for a in dataset], [b[1] for b in dataset])
+
+    for x in dataset:
+        if x[1] > ul or x[1] < ll:
+            plt.xlabel(f"Abone {id}")
+            plt.ylabel("Ort. Tüketim")
+            plt.scatter(x[0], x[1], color="red")
+            if x[0]+7 > 35:
+                _show=True
+        
+    if _show:
+        plt.show()
+    else:
+        plt.cla()
