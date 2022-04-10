@@ -1,9 +1,11 @@
 from functools import lru_cache
-
 import os
 import json
 
 import xlrd
+import numpy as np
+import matplotlib.pyplot as plt
+from statsmodels.tsa.seasonal import STL
 
 INPUT_SHEETS_FOLDER="./xlses"
 REPORT_OUTPUT_FOLDER="./output"
@@ -24,6 +26,9 @@ class XLSXData:
         self.rows = []
         for sheet in sheets:
             self.rows += [[x.value for x in sheet.row(i)] for i in range(sheet.nrows)]
+
+        self.book.release_resources()
+        del self.book
 
         self.header = self.rows[0]
         self.rows = self.rows[1:] # Throw away headers
@@ -57,7 +62,7 @@ def get_mapping():
 
 __map = get_mapping()
 
-@lru_cache(1000)
+@lru_cache(3000)
 def get_ind_id(sub):
     _max = (0, 0)
     _last_max_index = None
@@ -70,7 +75,7 @@ def get_ind_id(sub):
 
         score = get_match_score(sub[0], saved_sub[0], sub[1], saved_sub[1])
         if score == (20, 5):
-            return saved_sub[2]
+            return int(saved_sub[2])
 
         _avg_score = (score[0]*3+score[1])/4
 
@@ -78,14 +83,14 @@ def get_ind_id(sub):
             _max = score
             _last_best = saved_sub[2]
 
-    return _last_best
+    return int(_last_best)
 
 @lru_cache(500)
 def get_match_score(abn1, abn2, ist1, ist2):
     first_op_num = [int(i) for i in ist1.split(".")]
     second_op_num = [int(i) for i in ist2.split(".")]
-    first_sub_num=abn1.zfill(20)
-    second_sub_num=abn2.zfill(20)
+    first_sub_num=str(abn1).zfill(20)
+    second_sub_num=str(abn2).zfill(20)
 
     ordered_sub_match_count=0
     for index,part in enumerate(first_sub_num):
@@ -137,10 +142,9 @@ def match(datas: list) -> dict:
 
             Id = get_ind_id(sub[:-1])
             if not (Id in output.keys()):
-                output.update({Id: {"indexes": [index], "row_datas": [row_data]}})
-            elif not (index in output[Id]["indexes"]):
-                output[Id]["indexes"].append(index)
-                output[Id]["row_datas"].append(row_data)
+                output.update({Id: {index: row_data}})
+            else:
+                output[Id].update({index: row_data})
 
     return output
 
@@ -161,14 +165,34 @@ def load_xlses() -> dict:
 
     return output
 
+def test_stl(data, period=12):
+    res = STL(data, period=period).fit()
+    res.plot()
+    plt.show()
+
 file_structure = load_xlses()
+
+o = {}
 
 for tariff in file_structure:
     print(f"{tariff} tarifesi işleniyor...")
     for year in file_structure[tariff]:
         print(f"{tariff} tarifesinin {year} yılı işleniyor...")
-        a = match(file_structure[tariff][year])
-        for id in a:
-            print(id, [(i[13],a[id]['indexes'][c]) for c, i in enumerate(a[id]["row_datas"])])
-        print(len(a))
+        _a = match(file_structure[tariff][year])
 
+        for Id in _a.keys():
+            if Id in o.keys():
+                o[Id].update({year: _a[Id]})
+            else:
+                o.update({Id: {year: _a[Id]}})
+
+for id in o:
+    dataset = []
+
+    for year in o[id].keys():
+        for month in o[id][year].keys():
+            dataset.append(o[id][year][month][13])
+
+    print(id, dataset)
+    if len(dataset) == 12:
+        test_stl(np.asarray(dataset))
